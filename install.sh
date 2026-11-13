@@ -1,5 +1,5 @@
 #!/bin/sh
-# 从 GitHub Release 下载并安装 UUTier，保留现有配置和凭据。
+# 从 GitHub Release 下载并安装 UUTier。
 set -eu
 
 repo=${UUTIER_REPO:-Angels-Ray/UUTier}
@@ -7,10 +7,18 @@ action=
 version=
 prefix=
 libc=
+service_skip=0
 target_user=
 target_uid=
 target_gid=
+target_group=
 target_home=
+init_system=
+service_active=0
+service_existed=0
+systemctl_bin=
+rc_update_bin=
+rc_service_bin=
 
 usage() {
     cat <<'EOF'
@@ -18,14 +26,15 @@ usage() {
 
 命令：
   install     下载并安装最新版本
-  update      安装最新版本，保留配置和凭据
-  uninstall   删除二进制，保留配置和凭据
+  update      安装最新版本
+  uninstall   删除服务和二进制
   help        显示帮助
 
 选项：
   --version VERSION  安装指定版本，例如 0.0.1
   --prefix DIR       安装目录；默认使用现有 uutier 所在目录
   --libc gnu|musl    选择 gnu 或 musl 构建；默认按 ldd 判断
+  --no-service       不安装系统服务
 
 环境变量：UUTIER_REPO 覆盖 GitHub 仓库，格式 owner/name。
 EOF
@@ -104,6 +113,10 @@ while [ "$#" -gt 0 ]; do
             libc=$2
             shift 2
             ;;
+        --no-service)
+            service_skip=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -118,6 +131,7 @@ done
 if [ "$action" = uninstall ]; then
     [ -z "$version" ] || die "uninstall 不支持 --version"
     [ -z "$libc" ] || die "uninstall 不支持 --libc"
+    [ "$service_skip" -eq 0 ] || die "uninstall 不支持 --no-service"
 fi
 
 target_user=$(id -un)
@@ -126,6 +140,7 @@ if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; 
 fi
 target_uid=$(id -u "$target_user" 2>/dev/null) || die "用户不存在：$target_user"
 target_gid=$(id -g "$target_user" 2>/dev/null) || die "无法读取用户组：$target_user"
+target_group=$(id -gn "$target_user" 2>/dev/null) || die "无法读取用户组名：$target_user"
 
 if [ "$target_user" = "$(id -un)" ]; then
     target_home=${HOME:-}
@@ -166,11 +181,209 @@ if [ -z "$prefix" ]; then
     fi
 fi
 
+service_unit=/etc/systemd/system/uutier.service
+openrc_service=/etc/init.d/uutier
+service_log_dir=/var/log/uutier
+config_path=$target_home/.config/uutier/config.toml
+
+systemctl_bin=$(find_tool systemctl || true)
+rc_update_bin=$(find_tool rc-update || true)
+rc_service_bin=$(find_tool rc-service || true)
+
+detect_init() {
+    if [ "$service_skip" -eq 1 ]; then
+        echo none
+        return 0
+    fi
+    if [ -n "$systemctl_bin" ] && [ -d /run/systemd/system ]; then
+        echo systemd
+    elif [ -n "$rc_update_bin" ] && [ -n "$rc_service_bin" ] && [ -d /run/openrc ]; then
+        echo openrc
+    else
+        echo none
+    fi
+}
+
+init_system=$(detect_init)
+if [ "$init_system" != none ] && [ "$(id -u)" -ne 0 ]; then
+    if [ "$action" != uninstall ] || [ -f "$service_unit" ] || [ -f "$openrc_service" ]; then
+        if [ "$action" = uninstall ]; then
+            die "删除系统服务需要 root；用 sudo 运行"
+        fi
+        die "安装系统服务需要 root；用 sudo 运行，或加 --no-service"
+    fi
+fi
+if [ "$init_system" = none ] && [ "$service_skip" -eq 0 ]; then
+    echo "未检测到 systemd 或 OpenRC，跳过系统服务" >&2
+fi
+
+service_is_active() {
+    case "$init_system" in
+        systemd) "$systemctl_bin" is-active --quiet uutier.service 2>/dev/null ;;
+        openrc) "$rc_service_bin" uutier status >/dev/null 2>&1 ;;
+        *) return 1 ;;
+    esac
+}
+
+stop_service() {
+    case "$init_system" in
+        systemd) "$systemctl_bin" stop uutier.service ;;
+        openrc) "$rc_service_bin" uutier stop ;;
+        *) return 0 ;;
+    esac
+}
+
+start_service() {
+    case "$init_system" in
+        systemd)
+            if [ "$service_active" -eq 1 ]; then
+                "$systemctl_bin" restart uutier.service
+            else
+                "$systemctl_bin" start uutier.service
+            fi
+            ;;
+        openrc)
+            if [ "$service_active" -eq 1 ]; then
+                "$rc_service_bin" uutier restart
+            else
+                "$rc_service_bin" uutier start
+            fi
+            ;;
+        *) return 0 ;;
+    esac
+}
+
+wait_service() {
+    i=0
+    while [ "$i" -lt 10 ]; do
+        if service_is_active; then
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 1
+    done
+    return 1
+}
+
+write_service() {
+    case "$init_system" in
+        systemd)
+            cat > "$service_unit" <<EOF
+[Unit]
+Description=UUTier mesh node
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=$target_user
+Group=$target_group
+WorkingDirectory=$target_home
+Environment="HOME=$target_home"
+Environment="XDG_CONFIG_HOME=$target_home/.config"
+Environment="XDG_STATE_HOME=$target_home/.local/state"
+ExecStart="$prefix/uutier" up
+Restart=on-failure
+RestartSec=10
+RestartPreventExitStatus=2
+TimeoutStopSec=15
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            chmod 0644 "$service_unit" || die "无法设置 $service_unit 的权限"
+            ;;
+        openrc)
+            mkdir -p "$service_log_dir" || die "无法创建 $service_log_dir"
+            touch "$service_log_dir/service.log" "$service_log_dir/service.err" || die "无法创建服务日志"
+            chown "$target_user:$target_gid" \
+                "$service_log_dir" \
+                "$service_log_dir/service.log" \
+                "$service_log_dir/service.err" || die "无法设置服务日志的所有者"
+            chmod 0700 "$service_log_dir" || die "无法设置 $service_log_dir 的权限"
+            chmod 0600 "$service_log_dir/service.log" "$service_log_dir/service.err" || die "无法设置服务日志的权限"
+            cat > "$openrc_service" <<EOF
+#!/sbin/openrc-run
+
+name="uutier"
+description="UUTier mesh node"
+
+supervisor="supervise-daemon"
+command="$prefix/uutier"
+command_args="up"
+command_user="$target_user:$target_group"
+directory="$target_home"
+pidfile="/run/uutier.pid"
+respawn_delay=10
+respawn_max=10
+respawn_period=300
+output_log="/var/log/uutier/service.log"
+error_log="/var/log/uutier/service.err"
+
+export HOME="$target_home"
+export XDG_CONFIG_HOME="$target_home/.config"
+export XDG_STATE_HOME="$target_home/.local/state"
+
+depend() {
+    need net
+    after firewall
+}
+EOF
+            chmod 0755 "$openrc_service" || die "无法设置 $openrc_service 的权限"
+            ;;
+    esac
+}
+
+reload_service() {
+    case "$init_system" in
+        systemd) "$systemctl_bin" daemon-reload ;;
+        *) return 0 ;;
+    esac
+}
+
+enable_service() {
+    case "$init_system" in
+        systemd) "$systemctl_bin" enable uutier.service >/dev/null ;;
+        openrc) "$rc_update_bin" add uutier default >/dev/null ;;
+    esac
+}
+
+remove_service() {
+    case "$init_system" in
+        systemd)
+            if [ -f "$service_unit" ]; then
+                "$systemctl_bin" stop uutier.service >/dev/null 2>&1 || true
+                "$systemctl_bin" disable uutier.service >/dev/null 2>&1 || true
+                rm -f "$service_unit"
+                "$systemctl_bin" daemon-reload || true
+            fi
+            ;;
+        openrc)
+            if [ -f "$openrc_service" ]; then
+                "$rc_service_bin" uutier stop >/dev/null 2>&1 || true
+                "$rc_update_bin" del uutier default >/dev/null 2>&1 || true
+                rm -f "$openrc_service"
+            fi
+            ;;
+    esac
+}
+
 if [ "$action" = update ]; then
     [ -x "$prefix/uutier" ] || die "未安装：$prefix/uutier"
 fi
 
 if [ "$action" = uninstall ]; then
+    remove_service
     bin=$prefix/uutier
     if [ ! -e "$bin" ]; then
         echo "未安装：$bin"
@@ -187,7 +400,6 @@ if [ "$action" = uninstall ]; then
         die "没有权限删除 $bin"
     fi
     echo "已删除：$bin"
-    echo "配置和凭据未改动"
     exit 0
 fi
 
@@ -270,7 +482,15 @@ printf '%s\n' "$line" > "$tmp/asset.sha"
 chmod 0700 "$tmp/$asset"
 "$tmp/$asset" --version >/dev/null 2>&1 || die "下载的二进制无法执行：$asset"
 
+if [ "$init_system" != none ] && service_is_active; then
+    service_active=1
+    stop_service || die "无法停止 uutier 服务"
+fi
+
 if command -v pgrep >/dev/null 2>&1 && pgrep -x uutier >/dev/null 2>&1; then
+    if [ "$service_active" -eq 1 ]; then
+        start_service >/dev/null 2>&1 || true
+    fi
     die "uutier 正在运行，先停止进程再安装"
 fi
 
@@ -311,9 +531,64 @@ else
     fi
 fi
 
+if [ "$init_system" != none ]; then
+    case "$init_system" in
+        systemd)
+            if [ -f "$service_unit" ]; then
+                service_existed=1
+            fi
+            ;;
+        openrc)
+            if [ -f "$openrc_service" ]; then
+                service_existed=1
+            fi
+            ;;
+    esac
+    write_service
+    reload_service || die "systemctl daemon-reload 失败"
+    if [ "$action" = install ] || [ "$service_existed" -eq 0 ]; then
+        enable_service || die "无法启用 uutier 服务"
+    fi
+
+    start=1
+    config_missing=0
+    [ -f "$config_path" ] || config_missing=1
+    if [ "$service_active" -eq 0 ] && [ "$action" = update ] && [ "$service_existed" -eq 1 ]; then
+        start=0
+    fi
+    if [ "$service_active" -eq 0 ] && [ "$config_missing" -eq 1 ]; then
+        start=0
+    fi
+
+    if [ "$start" -eq 1 ]; then
+        if ! start_service; then
+            case "$init_system" in
+                systemd) echo "查看服务状态：systemctl status uutier" >&2 ;;
+                openrc) echo "查看服务状态：rc-service uutier status" >&2 ;;
+            esac
+            die "无法启动 uutier 服务"
+        fi
+        if ! wait_service; then
+            case "$init_system" in
+                systemd) echo "查看服务状态：systemctl status uutier" >&2 ;;
+                openrc) echo "查看服务状态：rc-service uutier status" >&2 ;;
+            esac
+            exit 1
+        fi
+        echo "服务已启动：uutier"
+    elif [ "$config_missing" -eq 1 ]; then
+        echo "未找到 $config_path，服务已启用但未启动" >&2
+        case "$init_system" in
+            systemd) echo "配置和登录后执行：systemctl start uutier" >&2 ;;
+            openrc) echo "配置和登录后执行：rc-service uutier start" >&2 ;;
+        esac
+    else
+        echo "服务未运行，保持停止" >&2
+    fi
+fi
+
 echo "已安装：$prefix/uutier"
 "$prefix/uutier" --version
 if getcap_bin=$(find_tool getcap); then
     "$getcap_bin" "$prefix/uutier"
 fi
-echo "配置和凭据未改动"

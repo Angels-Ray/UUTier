@@ -31,7 +31,7 @@ UUTier 是一个组网工具，节点之间优先直连，直连不通时用 UU 
 curl -fsSL "https://github.com/Angels-Ray/UUTier/blob/main/install.sh?raw=true" | sudo bash -s install
 ```
 
-脚本按架构和 C 库选择 `uutier-linux-<arch>-<libc>` 资产，校验 SHA256，安装后设置 `cap_net_admin`；不修改配置和凭据。通过 `sudo` 运行时安装到发起 `sudo` 的用户。`install`、`update`、`uninstall` 和选项见 [部署](packaging/README.md)。
+脚本按架构和 C 库选择 `uutier-linux-<arch>-<libc>` 资产，校验 SHA256，安装后设置 `cap_net_admin`。通过 `sudo` 运行时安装到发起 `sudo` 的用户。脚本识别 systemd 或 OpenRC，安装系统服务。服务以该用户运行。配置存在时脚本启动服务；没有配置时只启用服务。`--no-service` 跳过服务安装。`install`、`update`、`uninstall`、服务管理和选项见 [部署](packaging/README.md)。
 
 ## 构建
 
@@ -71,7 +71,7 @@ uutier up
 
 ## 部署
 
-systemd 用户单元和系统单元的安装步骤见 [packaging/README.md](packaging/README.md)；用 `sudo uutier up` 启动时，root 的 `HOME` 下没有配置和凭据，节点无法启动。
+部署步骤见 [packaging/README.md](packaging/README.md)，包括安装脚本、systemd 单元和 OpenRC 服务。用 `sudo uutier up` 启动时，root 的 `HOME` 下没有配置和凭据，节点无法启动。
 
 ## 限制
 

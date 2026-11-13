@@ -8,23 +8,34 @@
 curl -fsSL "https://github.com/Angels-Ray/UUTier/blob/main/install.sh?raw=true" | sudo bash -s install
 ```
 
-脚本按 `uname -m` 和 `ldd` 选择 `uutier-linux-<arch>-<libc>` 资产，下载 `SHA256SUMS` 校验，安装后执行 `setcap cap_net_admin+ep`。通过 `sudo` 运行时安装到发起 `sudo` 的用户；默认使用该用户现有 `uutier` 所在目录，没有时用 `~/.cargo/bin`。以 root 直接运行且没有现有 `uutier` 时使用 `/usr/local/bin`。脚本不修改配置和凭据。
+脚本按 `uname -m` 和 `ldd` 选择 `uutier-linux-<arch>-<libc>` 资产，下载 `SHA256SUMS` 校验，安装后执行 `setcap cap_net_admin+ep`。通过 `sudo` 运行时安装到发起 `sudo` 的用户；默认使用该用户 `~/.cargo/bin` 或 `~/.local/bin` 中现有的 `uutier`，都没有时用 `~/.cargo/bin`。以 root 直接运行且没有现有 `uutier` 时使用 `/usr/local/bin`。
+
+脚本识别 init 系统，写入并启用系统服务：
+
+| init 系统 | 服务文件 | 状态命令 |
+|---|---|---|
+| systemd | `/etc/systemd/system/uutier.service` | `systemctl status uutier` |
+| OpenRC | `/etc/init.d/uutier` | `rc-service uutier status` |
+
+服务以发起 `sudo` 的用户运行，读取该用户的配置和凭据。默认配置 `~/.config/uutier/config.toml` 存在时脚本启动服务；不存在时只启用服务，并提示配置后启动。服务启动失败时脚本返回 1。systemd 的日志用 `journalctl -u uutier` 查看；OpenRC 写入 `/var/log/uutier/service.log` 和 `/var/log/uutier/service.err`。使用自定义 `XDG_CONFIG_HOME` 或 `XDG_STATE_HOME` 时，执行 `sudo systemctl edit uutier` 添加 `Environment=`；OpenRC 修改 `/etc/init.d/uutier` 中的 `export`。`install` 和 `update` 会重写 OpenRC 服务文件，手工修改不会保留。检测到 systemd 或 OpenRC 时，安装或删除系统服务需要 root。
+
+`install` 和 `update` 先停止运行中的服务，替换二进制后再启动。
 
 | 命令 | 行为 |
 |---|---|
-| `install` | 下载并安装最新版本 |
+| `install` | 下载并安装最新版本，安装系统服务 |
 | `update` | 安装最新版本，要求已安装 |
-| `uninstall` | 删除二进制，保留配置和凭据 |
+| `uninstall` | 删除服务和二进制 |
 | `help` | 显示帮助 |
 
-`--version VERSION` 安装指定版本，`--prefix DIR` 指定安装目录，`--libc gnu|musl` 跳过 C 库判断；`UUTIER_REPO` 覆盖 GitHub 仓库，`sudo` 默认不传递该变量，需要时用 `sudo -E`。需要 sudo 密码且没有终端时，先下载脚本，再用 `sh install.sh install` 运行，密码从标准输入读取：
+`--version VERSION` 安装指定版本，`--prefix DIR` 指定安装目录，`--libc gnu|musl` 跳过 C 库判断，`--no-service` 跳过系统服务；`UUTIER_REPO` 覆盖 GitHub 仓库，`sudo` 默认不传递该变量，需要时用 `sudo -E`。需要 sudo 密码且没有终端时，先下载脚本，再用 `sh install.sh install` 运行，密码从标准输入读取：
 
 ```bash
 curl -fsSL "https://github.com/Angels-Ray/UUTier/blob/main/install.sh?raw=true" -o install.sh
 sh install.sh install
 ```
 
-Alpine 没有 `bash` 时用 `sudo sh -s install`。
+Alpine 没有 `bash` 时用 `doas sh -s install`。
 
 ## 从源码安装
 
@@ -60,6 +71,8 @@ uutier doctor
 
 ## systemd 用户单元
 
+以下步骤用于源码安装。安装脚本使用系统服务 `uutier.service`，不需要这些步骤。
+
 安装单元：
 
 ```bash
@@ -90,7 +103,9 @@ systemctl --user stop uutier
 
 ## systemd 系统单元
 
-服务器使用系统单元，由 `AmbientCapabilities=CAP_NET_ADMIN` 授予服务进程 TUN 权限；节点以 `uutier@用户名` 运行，该用户需要先完成上文的配置和登录。
+以下步骤用于源码安装。安装脚本生成的 `uutier.service` 直接以发起 `sudo` 的用户运行，不经过 `uutier@` 模板。
+
+系统单元由 `AmbientCapabilities=CAP_NET_ADMIN` 授予服务进程 TUN 权限；节点以 `uutier@用户名` 运行，该用户需要先完成上文的配置和登录。
 
 ```bash
 cargo build --release --locked -p uutier-cli
@@ -123,6 +138,8 @@ sudo systemctl stop uutier@alice
 curl -fsSL "https://github.com/Angels-Ray/UUTier/blob/main/install.sh?raw=true" | sudo bash -s update
 ```
 
+运行中的服务在替换二进制前停止，替换后重启；升级前停止的服务保持停止。
+
 从源码安装时执行：
 
 ```bash
@@ -148,7 +165,9 @@ sudo systemctl restart uutier@alice
 
 ## 卸载
 
-先删除凭据：
+安装脚本的 `uninstall` 停止并删除系统服务，再删除二进制。需要删除凭据时，先执行 `uutier logout`，再运行 `uninstall`。
+
+源码安装先删除凭据：
 
 ```bash
 uutier logout
