@@ -1,0 +1,187 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: ubuntu-20.04
+            image: ubuntu:20.04
+            arch: x86_64
+            runner: ubuntu-latest
+          - target: ubuntu-20.04
+            image: ubuntu:20.04
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          - target: ubuntu-22.04
+            image: ubuntu:22.04
+            arch: x86_64
+            runner: ubuntu-latest
+          - target: ubuntu-22.04
+            image: ubuntu:22.04
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          - target: ubuntu-24.04
+            image: ubuntu:24.04
+            arch: x86_64
+            runner: ubuntu-latest
+          - target: ubuntu-24.04
+            image: ubuntu:24.04
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          # Debian 10 的 glibc 2.28 低于 12 和 13，构建一次，在 12 和 13 上验证。
+          - target: debian-10
+            image: debian:10
+            arch: x86_64
+            runner: ubuntu-latest
+          - target: debian-10
+            image: debian:10
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        env:
+          IMAGE: ${{ matrix.image }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          docker run -i --name uutier-build \
+            -v "$PWD:/src:ro" \
+            -w /src \
+            -e CARGO_TARGET_DIR=/tmp/target \
+            -e CARGO_TERM_COLOR \
+            -e TARGET \
+            "$IMAGE" \
+            sh -s <<'EOF'
+          set -eu
+          if [ "$TARGET" = "debian-10" ]; then
+            sed -i \
+              -e 's|deb.debian.org/debian|archive.debian.org/debian|g' \
+              -e 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' \
+              /etc/apt/sources.list
+            echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until
+          fi
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential ca-certificates cmake curl
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
+          sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain 1.95.0 \
+            --component clippy --component rustfmt
+          . "$HOME/.cargo/env"
+          cargo build --release --locked -p uutier-cli
+          /tmp/target/release/uutier --version
+          EOF
+
+      - name: Stage artifact
+        run: |
+          mkdir -p dist
+          docker cp uutier-build:/tmp/target/release/uutier dist/uutier
+          docker rm uutier-build
+          chmod 0755 dist/uutier
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: uutier-${{ matrix.target }}-${{ matrix.arch }}
+          path: dist/uutier
+          if-no-files-found: error
+
+  build-alpine:
+    name: Build alpine ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        run: |
+          docker run -i --name uutier-build \
+            -v "$PWD:/src:ro" \
+            -w /src \
+            -e CARGO_TARGET_DIR=/tmp/target \
+            -e CARGO_TERM_COLOR \
+            rust:1.95.0-alpine3.22 \
+            sh -s <<'EOF'
+          set -eu
+          apk add --no-cache build-base cmake
+          cargo build --release --locked -p uutier-cli
+          /tmp/target/release/uutier --version
+          EOF
+
+      - name: Stage artifact
+        run: |
+          mkdir -p dist
+          docker cp uutier-build:/tmp/target/release/uutier dist/uutier
+          docker rm uutier-build
+          chmod 0755 dist/uutier
+          docker run --rm -v "$PWD/dist:/dist:ro" alpine:3.22 /dist/uutier --version
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: uutier-alpine-${{ matrix.arch }}
+          path: dist/uutier
+          if-no-files-found: error
+
+  verify-debian:
+    name: Verify Debian ${{ matrix.version }} ${{ matrix.arch }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "12"
+            arch: x86_64
+            runner: ubuntu-latest
+          - version: "12"
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          - version: "13"
+            arch: x86_64
+            runner: ubuntu-latest
+          - version: "13"
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: uutier-debian-10-${{ matrix.arch }}
+          path: dist
+
+      - name: Run binary
+        run: |
+          chmod 0755 dist/uutier
+          docker run -i --rm \
+            -v "$PWD/dist:/dist:ro" \
+            debian:${{ matrix.version }} \
+            sh -s <<'EOF'
+          set -eu
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libgcc-s1
+          /dist/uutier --version
+          EOF
