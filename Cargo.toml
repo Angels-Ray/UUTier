@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 rust-version = "1.95"
 publish = false
@@ -56,9 +56,9 @@ tracing = { version = "0.1", default-features = false, features = ["std"] }
 # 其中含房间 token 和信令载荷。
 tracing-subscriber = { version = "0.3", default-features = false, features = ["ansi", "env-filter", "fmt", "smallvec"] }
 
-uutier-core = { version = "0.1.0", path = "crates/uutier-core" }
-uutier-node = { version = "0.1.0", path = "crates/uutier-node" }
-uutier-turn = { version = "0.1.0", path = "crates/uutier-turn" }
+uutier-core = { version = "0.0.1", path = "crates/uutier-core" }
+uutier-node = { version = "0.0.1", path = "crates/uutier-node" }
+uutier-turn = { version = "0.0.1", path = "crates/uutier-turn" }
 
 [profile.release]
 lto = "thin"

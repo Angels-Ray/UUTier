@@ -1,6 +1,32 @@
 # 部署
 
-## 安装
+## 安装脚本
+
+从最新 Release 安装：
+
+```bash
+curl -fsSL "https://github.com/Angels-Ray/UUTier/blob/main/install.sh?raw=true" | sudo bash -s install
+```
+
+脚本按 `uname -m` 和 `ldd` 选择 `uutier-linux-<arch>-<libc>` 资产，下载 `SHA256SUMS` 校验，安装后执行 `setcap cap_net_admin+ep`。通过 `sudo` 运行时安装到发起 `sudo` 的用户；默认使用该用户现有 `uutier` 所在目录，没有时用 `~/.cargo/bin`。以 root 直接运行且没有现有 `uutier` 时使用 `/usr/local/bin`。脚本不修改配置和凭据。
+
+| 命令 | 行为 |
+|---|---|
+| `install` | 下载并安装最新版本 |
+| `update` | 安装最新版本，要求已安装 |
+| `uninstall` | 删除二进制，保留配置和凭据 |
+| `help` | 显示帮助 |
+
+`--version VERSION` 安装指定版本，`--prefix DIR` 指定安装目录，`--libc gnu|musl` 跳过 C 库判断；`UUTIER_REPO` 覆盖 GitHub 仓库，`sudo` 默认不传递该变量，需要时用 `sudo -E`。需要 sudo 密码且没有终端时，先下载脚本，再用 `sh install.sh install` 运行，密码从标准输入读取：
+
+```bash
+curl -fsSL "https://github.com/Angels-Ray/UUTier/blob/main/install.sh?raw=true" -o install.sh
+sh install.sh install
+```
+
+Alpine 没有 `bash` 时用 `sudo sh -s install`。
+
+## 从源码安装
 
 安装二进制并授予创建 TUN 的权限：
 
@@ -90,6 +116,14 @@ sudo systemctl stop uutier@alice
 系统单元在 300 s 内启动失败 10 次后停止重试；配置、凭据、身份文件、设备标记和 TUN 权限错误以退出码 2 结束，不会触发重启。
 
 ## 升级
+
+执行安装脚本的 `update`：
+
+```bash
+curl -fsSL "https://github.com/Angels-Ray/UUTier/blob/main/install.sh?raw=true" | sudo bash -s update
+```
+
+从源码安装时执行：
 
 ```bash
 cargo install --locked --path crates/uutier-cli

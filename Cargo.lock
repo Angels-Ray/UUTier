@@ -2158,7 +2158,7 @@ dependencies = [
 
 [[package]]
 name = "uutier-cli"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "clap",
  "serde_json",
@@ -2172,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "uutier-core"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2182,7 +2182,7 @@ dependencies = [
 
 [[package]]
 name = "uutier-node"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "blake2",
  "if-addrs",
@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "uutier-turn"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "base64",
  "futures-util",

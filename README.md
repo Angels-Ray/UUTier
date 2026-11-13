@@ -23,6 +23,16 @@ UUTier 是一个组网工具，节点之间优先直连，直连不通时用 UU 
 
 节点通过 UU 设备列表发现对端：本账号下别名以 `uutier-` 开头、平台不是 Android、iOS 或 TV 的设备参与组网，最多三台，`uutier login` 注册的设备带这个标记，每台设备需要独立的 UU 设备 ID，在每台主机上分别执行 `uutier login`。设备按 UU 设备 ID 排序后分配 host 和 viewer 角色，UUTier 只操作带 `uutier-` 标记设备的房间；已保存的设备不带标记时，用 `uutier login --new-device` 注册新设备。
 
+## 安装
+
+从最新 Release 下载并安装：
+
+```bash
+curl -fsSL "https://github.com/Angels-Ray/UUTier/blob/main/install.sh?raw=true" | sudo bash -s install
+```
+
+脚本按架构和 C 库选择 `uutier-linux-<arch>-<libc>` 资产，校验 SHA256，安装后设置 `cap_net_admin`；不修改配置和凭据。通过 `sudo` 运行时安装到发起 `sudo` 的用户。`install`、`update`、`uninstall` 和选项见 [部署](packaging/README.md)。
+
 ## 构建
 
 构建需要 Rust 1.95 和 C 编译器。
@@ -35,7 +45,7 @@ sudo setcap cap_net_admin+ep "$(command -v uutier)"
 
 创建 TUN 需要 `CAP_NET_ADMIN`，重新安装二进制后要重新执行 `setcap`；多用户主机还要执行 `chmod 700 "$(command -v uutier)"`，避免其他用户执行这个带能力的二进制。
 
-构建产物是 x86-64 动态链接的二进制，依赖 glibc，最低版本 2.34，由 pthread 符号版本决定；在更旧的发行版上，直接在目标主机执行 `cargo build --release --locked`。
+本机构建的产物链接本机 C 库。Release 的 gnu 资产在 Debian 10 上构建，可在 glibc 2.28 及更新的发行版上运行；Alpine 使用 musl 资产。目标发行版更旧时，直接在目标主机执行 `cargo build --release --locked`。
 
 ## 配置
 
