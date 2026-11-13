@@ -1,0 +1,19 @@
+[Unit]
+Description=UUTier mesh node
+StartLimitIntervalSec=0
+
+[Service]
+# CapabilityBoundingSet、ProtectKernelTunables 和 RestrictAddressFamilies 在用户单元中会强制 NoNewPrivs=1，使 setcap 授予的 CAP_NET_ADMIN 失效。
+Type=simple
+Environment=XDG_CONFIG_HOME=%h/.config XDG_STATE_HOME=%h/.local/state
+ExecStart=%h/.cargo/bin/uutier up
+Restart=on-failure
+RestartSec=10
+RestartPreventExitStatus=2
+TimeoutStopSec=15
+ProtectSystem=full
+PrivateTmp=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

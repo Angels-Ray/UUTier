@@ -1,0 +1,30 @@
+[package]
+name = "uutier-turn"
+description = "UU login, credential storage, TURN client, and local UDP bridge for UUTier"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+base64.workspace = true
+futures-util.workspace = true
+getrandom.workspace = true
+hmac.workspace = true
+md-5.workspace = true
+qrcode.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+uutier-core.workspace = true
+uuid.workspace = true

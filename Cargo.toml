@@ -1,0 +1,79 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/uutier-cli",
+    "crates/uutier-core",
+    "crates/uutier-node",
+    "crates/uutier-turn",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[workspace.dependencies]
+base64 = "0.23"
+blake2 = "0.10"
+clap = { version = "4.5", features = ["derive", "env"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+getrandom = "0.4"
+hmac = "0.12"
+if-addrs = "0.15"
+md-5 = "0.10"
+qrcode = { version = "0.14", default-features = false }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha1 = "0.10"
+sha2 = "0.10"
+snow = { version = "0.10", default-features = false, features = [
+    "default-resolver",
+    "use-blake2",
+    "use-chacha20poly1305",
+    "use-curve25519",
+    "use-getrandom",
+] }
+tempfile = "3.13"
+thiserror = "2.0"
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+tun = { version = "0.8", features = ["async"] }
+uuid = { version = "1", features = ["v4"] }
+x25519-dalek = { version = "3", features = ["static_secrets", "getrandom"] }
+tokio = { version = "1.40", features = [
+    "io-util",
+    "macros",
+    "net",
+    "rt-multi-thread",
+    "signal",
+    "sync",
+    "time",
+] }
+toml = "0.8"
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+# 不启用 tracing-log：tungstenite 以 trace 输出完整的 WebSocket 握手头和消息，
+# 其中含房间 token 和信令载荷。
+tracing-subscriber = { version = "0.3", default-features = false, features = ["ansi", "env-filter", "fmt", "smallvec"] }
+
+uutier-core = { version = "0.1.0", path = "crates/uutier-core" }
+uutier-node = { version = "0.1.0", path = "crates/uutier-node" }
+uutier-turn = { version = "0.1.0", path = "crates/uutier-turn" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+mem_forget = "deny"
+missing_panics_doc = "warn"
+cast_lossless = "warn"
+cast_possible_truncation = "warn"

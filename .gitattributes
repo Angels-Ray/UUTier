@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+*.rs text
+*.toml text
+*.md text
+*.sh text eol=lf
+*.yml text
+*.yaml text
+Cargo.lock text

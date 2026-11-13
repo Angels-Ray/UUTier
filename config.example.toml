@@ -1,0 +1,18 @@
+[uu]
+# path = "/path/to/uu.json" # 不填时读取 $XDG_CONFIG_HOME/uutier/uu.json；XDG_CONFIG_HOME 未设置或不是绝对路径时读取 ~/.config/uutier/uu.json；填了必须是绝对路径
+
+[turn]
+enabled = true
+mode = "direct-first"      # direct-first: 先直连，5 s 未握手改用 TURN；always: 直接走 TURN
+request_timeout_s = 5      # [s]
+
+[network]
+name = "uutier"
+secret = ""                # 必填，至少 16 byte。用 openssl rand -hex 32 生成，所有节点相同
+ipv4 = "10.144.0.2"        # 每台主机不同
+mtu_bytes = 1280           # [byte]
+listen_port = 12010        # [port]
+
+# 组网最多三台设备。每台设备在 UU 设备列表里的别名以 uutier- 开头，
+# 例如 uutier-laptop。UUTier 只操作这些设备的房间。
+# 登录后自动发现同账号下的另外两台设备。
